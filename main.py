@@ -9,7 +9,7 @@ import shutil
 import sys
 from time import time
 from typing import Dict, NamedTuple, Tuple
-from subprocess import call
+from subprocess import Popen, PIPE
 
 import yaml
 from pathos.multiprocessing import ProcessingPool as Pool
@@ -67,7 +67,7 @@ def main(args: Args) -> None:
                 assert conanfile.is_file()
                 configurations.append((recipe.name, version.name, conanfile))
     pool = Pool(args.pool)
-    def mapped_create(tpl: Tuple[str, str, Path]) -> bool:
+    def mapped_create(tpl: Tuple[str, str, Path]) -> Tuple[bool, str, str]:
         name, ver, pth = tpl
         return conan_create(args.conan, name, ver, pth, args.conan_cache_dir, args.source_dir, args.install_dir, profile_str)
     results = pool.map(mapped_create, configurations)
@@ -86,9 +86,12 @@ def main(args: Args) -> None:
     print(f' and failed: {failure}')
     print('FAILED PACKAGES:')
     for tpl, result in zip(configurations, results):
-        if not result:
+        ok, out, err =result
+        if not ok:
             name, ver, pth = tpl
             print(f'{name}/{ver} - {pth}')
+            print(err)
+            print('- '*10)
     for i in range(5):
         print('='*80)
 
@@ -112,7 +115,7 @@ def read_profile(conan: str) -> str:
         raise RuntimeError(f'Unsupported platform: {sys.platform}')
 
 
-def conan_create(conan: str, package: str, version: str, path: Path, cache_folder: Path, source_folder: Path, install_folder: Path, profile: str) -> bool:
+def conan_create(conan: str, package: str, version: str, path: Path, cache_folder: Path, source_folder: Path, install_folder: Path, profile: str) -> Tuple[bool, str, str]:
     real_if = install_folder / f'{package}-{version}'
     real_sf = source_folder / f'{package}-{version}'
     if real_if.is_dir():
@@ -131,7 +134,9 @@ def conan_create(conan: str, package: str, version: str, path: Path, cache_folde
     print(f' -- {command}')
     env_copy = environ.copy()
     env_copy['CONAN_USER_HOME'] = str((cache_folder / str(current_process().ident)).absolute())
-    return call(command, env=env_copy) == 0
+    p = Popen(command, env=env_copy, stderr=PIPE, stdout=PIPE)
+    out, err = (x.decode() for x in p.communicate())
+    return (p.returncode == 0, out, err)
 
 
 def write_graph(name: str, version: str, install_folder: Path) -> None:
