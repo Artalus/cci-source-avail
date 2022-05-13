@@ -5,10 +5,10 @@ import json
 from os import scandir, environ
 import os
 from pathlib import Path
-from pprint import pprint
 import shutil
+import sys
 from time import time
-from typing import Dict, List, NamedTuple
+from typing import Dict, NamedTuple
 from subprocess import call
 
 import yaml
@@ -44,6 +44,8 @@ def main(args: Args) -> None:
     cci = args.cci_dir / 'recipes'
     print(f'Parsing {cci.absolute()}')
 
+    profile_str = read_profile(args.conan)
+
     start = time()
     for recipe in scandir(cci):
         # for tests
@@ -54,7 +56,7 @@ def main(args: Args) -> None:
         if conf.is_file():
             versions = read_versions(conf)
             for v, p in versions.items():
-                succ = conan_create(args.conan, recipe.name, v, p, args.source_dir, args.install_dir)
+                succ = conan_create(args.conan, recipe.name, v, p, args.source_dir, args.install_dir, profile_str)
                 packages += 1
                 if not succ:
                     failed.append (f'{recipe.name}/{v} - {p}')
@@ -85,13 +87,23 @@ def main(args: Args) -> None:
 def read_versions(config: Path) -> Dict[str, Path]:
     result = dict()
     with open(config) as f:
-        y = yaml.load(f, yaml.CLoader)
+        y = yaml.load(f, yaml.Loader)
         for v, x in y['versions'].items():
             result[v] = config.parent / x['folder']
     return result
 
+def read_profile(conan: str) -> str:
+    # TODO: could use `conan profile show default`, but on windows its string results in
+    #       'settings.compiler.runtime' value not defined
+    if sys.platform == 'win32':
+        return '[settings]\narch=x86_64\narch_build=x86_64\nbuild_type=Release\ncompiler=Visual Studio\ncompiler.runtime=MD\ncompiler.version=17\nos=Windows\nos_build=Windows\n[options]\n[build_requires]\n[env]\n'
+    elif 'linux' in sys.platform:
+        return '[settings]\narch=x86_64\narch_build=x86_64\nbuild_type=Release\ncompiler=gcc\ncompiler.libcxx=libstdc++\ncompiler.version=11\nos=Linux\nos_build=Linux\n[options]\n[build_requires]\n[env]\n'
+    else:
+        raise RuntimeError(f'Unsupported platform: {sys.platform}')
 
-def conan_create(conan: str, package: str, version: str, path: Path, source_folder: Path, install_folder: Path) -> None:
+
+def conan_create(conan: str, package: str, version: str, path: Path, source_folder: Path, install_folder: Path, profile: str) -> bool:
     if install_folder.is_dir():
         shutil.rmtree(install_folder)
     os.makedirs(install_folder)
@@ -99,7 +111,7 @@ def conan_create(conan: str, package: str, version: str, path: Path, source_fold
         shutil.rmtree(source_folder)
     os.makedirs(source_folder)
 
-    write_lock(package, version, install_folder)
+    write_lock(package, version, install_folder, profile)
     write_graph(package, version, install_folder)
 
     workdir = str(path.absolute())
@@ -122,7 +134,7 @@ def write_graph(name: str, version: str, install_folder: Path) -> None:
     with open(install_folder / 'graph_info.json', 'w') as f:
         json.dump(graph, f, indent=1)
 
-def write_lock(name: str, version: str, install_folder: Path) -> None:
+def write_lock(name: str, version: str, install_folder: Path, profile: str) -> None:
     lock = {
  "graph_lock": {
   "nodes": {
@@ -131,7 +143,7 @@ def write_lock(name: str, version: str, install_folder: Path) -> None:
    }
   },
  },
- "profile_host": "[settings]\narch=x86_64\narch_build=x86_64\nbuild_type=Release\ncompiler=gcc\ncompiler.libcxx=libstdc++\ncompiler.version=11\nos=Linux\nos_build=Linux\n[options]\n[build_requires]\n[env]\n"
+ "profile_host": profile.strip()
 }
     with open(install_folder / 'conan.lock', 'w') as f:
         json.dump(lock, f, indent=1)
