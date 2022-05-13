@@ -8,10 +8,12 @@ from pathlib import Path
 import shutil
 import sys
 from time import time
-from typing import Dict, NamedTuple
+from typing import Dict, NamedTuple, Tuple
 from subprocess import call
 
 import yaml
+from pathos.multiprocessing import ProcessingPool as Pool
+from multiprocessing import current_process
 
 
 class Args(NamedTuple):
@@ -20,6 +22,7 @@ class Args(NamedTuple):
     source_dir: Path
     install_dir: Path
     conan: str
+    pool: int
 
 
 def parse_args() -> Args:
@@ -29,17 +32,13 @@ def parse_args() -> Args:
     p.add_argument('--source-dir', type=Path, required=True)
     p.add_argument('--install-dir', type=Path, required=True)
     p.add_argument('--conan', default='conan')
+    p.add_argument('--pool', type=int, default=4)
     return Args(**p.parse_args().__dict__)
 
 
 def main(args: Args) -> None:
-    if args.conan_cache_dir:
-        environ['CONAN_USER_HOME'] = str(args.conan_cache_dir.absolute())
-
     recipes = 0
-    packages = 0
     configless = 0
-    failed = []
 
     cci = args.cci_dir / 'recipes'
     print(f'Parsing {cci.absolute()}')
@@ -47,8 +46,11 @@ def main(args: Args) -> None:
     profile_str = read_profile(args.conan)
 
     start = time()
+    configurations = []
     for recipe in scandir(cci):
         # for tests
+        # if recipes > 15:
+        #     break
         # if recipe.name not in ['xz_utils', 'zyre', 'msys2', 'zlib']:
         #     continue
         recipes += 1
@@ -56,16 +58,21 @@ def main(args: Args) -> None:
         if conf.is_file():
             versions = read_versions(conf)
             for v, p in versions.items():
-                succ = conan_create(args.conan, recipe.name, v, p, args.source_dir, args.install_dir, profile_str)
-                packages += 1
-                if not succ:
-                    failed.append (f'{recipe.name}/{v} - {p}')
+                configurations.append((recipe.name, v, p))
         else:
             configless += 1
             print(f' -- {recipe.name} is configless')
             for version in scandir(recipe):
                 conanfile = Path(recipe) / version / 'conanfile.py'
                 assert conanfile.is_file()
+                configurations.append((recipe.name, version.name, conanfile))
+    pool = Pool(args.pool)
+    def mapped_create(tpl: Tuple[str, str, Path]) -> bool:
+        name, ver, pth = tpl
+        return conan_create(args.conan, name, ver, pth, args.conan_cache_dir, args.source_dir, args.install_dir, profile_str)
+    results = pool.map(mapped_create, configurations)
+    success = len(list(x for x in results if x))
+    failure = len(results) - success
     seconds_spent = int(time() - start)
 
     for i in range(5):
@@ -74,12 +81,14 @@ def main(args: Args) -> None:
     print(f'TIME SPENT: {seconds_spent//3600}h {(seconds_spent//60)%60}m {seconds_spent%60}s')
     print(f'RECIPES TRAVERSED: {recipes}')
     print(f' of them configless: {configless}')
-    print(f'PACKAGES CHECKED: {packages}')
-    print(f' of them succeeded: {packages-len(failed)}')
-    print(f' and failed: {len(failed)}')
+    print(f'PACKAGES CHECKED: {len(results)}')
+    print(f' of them succeeded: {success}')
+    print(f' and failed: {failure}')
     print('FAILED PACKAGES:')
-    for f in failed:
-        print(f)
+    for tpl, result in zip(configurations, results):
+        if not result:
+            name, ver, pth = tpl
+            print(f'{name}/{ver} - {pth}')
     for i in range(5):
         print('='*80)
 
@@ -103,22 +112,26 @@ def read_profile(conan: str) -> str:
         raise RuntimeError(f'Unsupported platform: {sys.platform}')
 
 
-def conan_create(conan: str, package: str, version: str, path: Path, source_folder: Path, install_folder: Path, profile: str) -> bool:
-    if install_folder.is_dir():
-        shutil.rmtree(install_folder)
-    os.makedirs(install_folder)
-    if source_folder.is_dir():
-        shutil.rmtree(source_folder)
-    os.makedirs(source_folder)
+def conan_create(conan: str, package: str, version: str, path: Path, cache_folder: Path, source_folder: Path, install_folder: Path, profile: str) -> bool:
+    real_if = install_folder / f'{package}-{version}'
+    real_sf = source_folder / f'{package}-{version}'
+    if real_if.is_dir():
+        shutil.rmtree(real_if)
+    os.makedirs(real_if)
+    if real_sf.is_dir():
+        shutil.rmtree(real_sf)
+    os.makedirs(real_sf)
 
-    write_lock(package, version, install_folder, profile)
-    write_graph(package, version, install_folder)
+    write_lock(package, version, real_if, profile)
+    write_graph(package, version, real_if)
 
     workdir = str(path.absolute())
 
-    command = [conan, 'source', workdir, '-if', str(install_folder.absolute()), '-sf', str(source_folder.absolute())]
+    command = [conan, 'source', workdir, '-if', str(real_if.absolute()), '-sf', str(real_sf.absolute())]
     print(f' -- {command}')
-    return call(command) == 0
+    env_copy = environ.copy()
+    env_copy['CONAN_USER_HOME'] = str((cache_folder / str(current_process().ident)).absolute())
+    return call(command, env=env_copy) == 0
 
 
 def write_graph(name: str, version: str, install_folder: Path) -> None:
