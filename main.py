@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from pprint import pprint
 import shutil
+from time import time
 from typing import Dict, List, NamedTuple
 from subprocess import call
 
@@ -35,24 +36,51 @@ def main(args: Args) -> None:
     if args.conan_cache_dir:
         environ['CONAN_USER_HOME'] = str(args.conan_cache_dir.absolute())
 
+    recipes = 0
+    packages = 0
+    configless = 0
     failed = []
 
     cci = args.cci_dir / 'recipes'
     print(f'Parsing {cci.absolute()}')
+
+    start = time()
     for recipe in scandir(cci):
         # for tests
-        # if recipe.name != 'xz_utils':
-        #     continue
+        if recipe.name not in ['xz_utils', 'zyre', 'msys2', 'zlib']:
+            continue
+        recipes += 1
         conf = Path(recipe) / 'config.yml'
         if conf.is_file():
             versions = read_versions(conf)
             for v, p in versions.items():
-                conan_create(args.conan, recipe.name, v, p, args.source_dir, args.install_dir)
+                succ = conan_create(args.conan, recipe.name, v, p, args.source_dir, args.install_dir)
+                packages += 1
+                if not succ:
+                    failed.append (f'{recipe.name}/{v} - {p}')
         else:
-            print(f'{recipe} -- configless')
+            configless += 1
+            print(f' -- {recipe.name} is configless')
             for version in scandir(recipe):
                 conanfile = Path(recipe) / version / 'conanfile.py'
                 assert conanfile.is_file()
+    seconds_spent = int(time() - start)
+
+    for i in range(5):
+        print('='*80)
+    print('   FINAL REPORT')
+    print(f'TIME SPENT: {seconds_spent//3600}h {(seconds_spent//60)%60}m {seconds_spent%60}s')
+    print(f'RECIPES TRAVERSED: {recipes}')
+    print(f' of them configless: {configless}')
+    print(f'PACKAGES CHECKED: {packages}')
+    print(f' of them succeeded: {packages-len(failed)}')
+    print(f' and failed: {len(failed)}')
+    print('FAILED PACKAGES:')
+    for f in failed:
+        print(f)
+    for i in range(5):
+        print('='*80)
+
 
 def read_versions(config: Path) -> Dict[str, Path]:
     result = dict()
