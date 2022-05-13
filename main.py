@@ -47,8 +47,8 @@ def main(args: Args) -> None:
     start = time()
     for recipe in scandir(cci):
         # for tests
-        if recipe.name not in ['xz_utils', 'zyre', 'msys2', 'zlib']:
-            continue
+        # if recipe.name not in ['xz_utils', 'zyre', 'msys2', 'zlib']:
+        #     continue
         recipes += 1
         conf = Path(recipe) / 'config.yml'
         if conf.is_file():
