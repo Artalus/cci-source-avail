@@ -111,6 +111,8 @@ def read_profile(conan: str) -> str:
         return '[settings]\narch=x86_64\narch_build=x86_64\nbuild_type=Release\ncompiler=Visual Studio\ncompiler.runtime=MD\ncompiler.version=17\nos=Windows\nos_build=Windows\n[options]\n[build_requires]\n[env]\n'
     elif 'linux' in sys.platform:
         return '[settings]\narch=x86_64\narch_build=x86_64\nbuild_type=Release\ncompiler=gcc\ncompiler.libcxx=libstdc++\ncompiler.version=11\nos=Linux\nos_build=Linux\n[options]\n[build_requires]\n[env]\n'
+    elif sys.platform == 'darwin':
+        return '[settings]\nos=Macos\nos_build=Macos\narch=x86_64\narch_build=x86_64\ncompiler=apple-clang\ncompiler.version=13\ncompiler.libcxx=libc++\nbuild_type=Release\n[options]\n[conf]\n[build_requires]\n[env]\n'
     else:
         raise RuntimeError(f'Unsupported platform: {sys.platform}')
 
