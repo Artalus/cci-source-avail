@@ -128,14 +128,17 @@ def conan_create(conan: str, package: str, version: str, path: Path, cache_folde
     write_lock(package, version, real_if, profile)
     write_graph(package, version, real_if)
 
-    workdir = str(path.absolute())
+    workdir = str(path)
 
-    command = [conan, 'source', workdir, '-if', str(real_if.absolute()), '-sf', str(real_sf.absolute())]
-    print(f' -- {command}')
+    command = [conan, 'source', workdir, '-if', str(real_if), '-sf', str(real_sf)]
+    print(f' -- {package}/{version} -- {command}')
     env_copy = environ.copy()
     env_copy['CONAN_USER_HOME'] = str((cache_folder / str(current_process().ident)).absolute())
     p = Popen(command, env=env_copy, stderr=PIPE, stdout=PIPE)
     out, err = (x.decode() for x in p.communicate())
+    downloaded = [x.name for x in scandir(real_sf)]
+    print(f' -- {package}/{version} :: {downloaded}')
+    shutil.rmtree(real_sf)
     return (p.returncode == 0, out, err)
 
 

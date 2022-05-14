@@ -41,4 +41,3 @@ jobs:
           --conan-cache-dir cache \
           --source-dir cci-sf \
           --install-dir cci-if
-        ls -lad cci-sf/*/*
