@@ -4,7 +4,6 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
   push:
-    branches: [ master ]
   pull_request:
     branches: [ master ]
 
@@ -24,7 +23,7 @@ jobs:
       uses: actions/checkout@v3
       with:
         repository: conan-io/conan-center-index
-        ref: master
+        ref: e6d6d2bc85de669b3b50c56fa5f7c2d7f5f67f8c
         path: cci
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
