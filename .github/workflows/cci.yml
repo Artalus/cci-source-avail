@@ -42,4 +42,4 @@ jobs:
           --conan-cache-dir cache \
           --source-dir cci-sf \
           --install-dir cci-if \
-          --pool 8
+          --filter-recipes

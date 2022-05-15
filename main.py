@@ -23,6 +23,7 @@ class Args(NamedTuple):
     install_dir: Path
     conan: str
     pool: int
+    filter_recipes: bool
 
 
 def parse_args() -> Args:
@@ -33,6 +34,7 @@ def parse_args() -> Args:
     p.add_argument('--install-dir', type=Path, required=True)
     p.add_argument('--conan', default='conan')
     p.add_argument('--pool', type=int, default=4)
+    p.add_argument('--filter-recipes', action='store_true')
     return Args(**p.parse_args().__dict__)
 
 
@@ -48,6 +50,9 @@ def main(args: Args) -> None:
     start = time()
     configurations = []
     for recipe in scandir(cci):
+        if args.filter_recipes and not filter_recipe_by_os(recipe.name):
+            print(f' !! skipping recipe {recipe.name}')
+            continue
         # for tests
         # if recipes > 15:
         #     break
@@ -170,6 +175,42 @@ def write_lock(name: str, version: str, install_folder: Path, profile: str) -> N
 }
     with open(install_folder / 'conan.lock', 'w') as f:
         json.dump(lock, f, indent=1)
+
+
+def filter_recipe_by_os(name: str) -> bool:
+    if 'linux' in sys.platform:
+        return name not in [
+            '7zip', # windows-only
+            'ags', # not-linux
+            'cccl', # vs-only
+            'directshowbaseclasses', # windows-only
+            'dirent', # windows-only
+            'getopt-for-visual-studio', # vs-only
+            'ios-cmake', # mac-only
+            'jom', # windows-only
+            'skyr-url', # not-gcc
+            'strawberryperl', # windows-only
+            'wtl', # not-linux
+            'xege', # windows-only
+        ]
+    if 'darwin' in sys.platform:
+        return name in [
+            'ios-cmake',
+        ]
+    if 'win32' in sys.platform:
+        return name in [
+            '7zip',
+            'cccl',
+            'directshowbaseclasses',
+            'dirent',
+            'getopt-for-visual-studio',
+            'jom',
+            'skyr-url',
+            'strawberryperl',
+            'wtl',
+            'xege',
+        ]
+    raise RuntimeError(f'Unsupported platform: {sys.platform}')
 
 if __name__ == '__main__':
     main(parse_args())
